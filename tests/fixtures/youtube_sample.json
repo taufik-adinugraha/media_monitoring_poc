@@ -1,0 +1,13 @@
+{
+  "example_channel": [
+    {
+      "title": "Diskusi: KPK dan pemberantasan korupsi",
+      "link": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "published": "2026-01-10T10:00:00+00:00",
+      "summary": "Pembahasan tentang KPK, kasus korupsi, dan peran DPR.",
+      "video_id": "dQw4w9WgXcQ",
+      "_channel_name": "example_channel",
+      "_channel_id": "UCxxxxxxxxxxxxxxxxxxxxxx"
+    }
+  ]
+}
