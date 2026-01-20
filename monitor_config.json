@@ -79,7 +79,7 @@
   "preprocess": {
     "enabled": true,
     "gemini_model": "models/gemini-2.0-flash-lite",
-    "batch_size": 10,
+    "batch_size": 50,
     "max_retries": 2
   },
   "report": {

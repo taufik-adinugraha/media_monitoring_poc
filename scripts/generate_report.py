@@ -78,14 +78,16 @@ def main():
                 f"- Use ONLY the sources in the URL list below as evidence.\n"
                 f"- Summarize key developments, controversies, and important facts.\n"
                 f"- Compare framing differences across publishers when possible.\n"
-                f"- Provide concise bullet points and a short narrative paragraph.\n\n"
+                f"- Provide concise bullet points and a short narrative paragraph.\n"
+                f"- Highlight important numbers and data.\n"
+                f"- Generate relevant recommendations for action based on the report in the context of Public Relations.\n"
                 f"URL list:\n" + "\n".join([f"- {u}" for u in urls])
             )
 
             resp = client.chat(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
-                max_tokens=1400,
+                max_tokens=10_000,
                 search_recency_filter="week",
                 search_domain_filter=domains,
             )
