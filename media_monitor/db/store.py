@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from sqlalchemy import create_engine, select, update
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from ..utils import json_dumps, json_loads
@@ -24,12 +24,35 @@ class Store:
         with Session(self.engine) as s:
             yield s
 
+    # ------------------------------------------------------------------
+    # Ingestion
+    # ------------------------------------------------------------------
     def upsert_items(self, items: List[Dict[str, Any]]) -> Tuple[int, int]:
         """Insert new items; update existing if same id.
         Returns (inserted, updated).
         """
         inserted = 0
         updated = 0
+
+        protected_fields = {
+            "topics",
+            "actors",
+            "locations",
+            "language",
+            "is_editorial",
+            "sentiment",
+            "tags_json",
+            "signals_json",
+            "content_text",
+            "content_fetched_at",
+            "content_status",
+            "content_hash",
+            "enriched_at",
+            "enrich_model",
+            "enrich_status",
+            "enrich_error",
+        }
+
         with self.session() as s:
             for it in items:
                 obj = s.get(MediaItem, it["id"])
@@ -37,18 +60,25 @@ class Store:
                     s.add(MediaItem(**it))
                     inserted += 1
                 else:
-                    # update core fields but keep enrichment unless missing
                     for k, v in it.items():
-                        if k in ("topics","actors","locations","language","is_editorial","tags_json","enriched_at","enrich_model","enrich_status","enrich_error"):
+                        if k in protected_fields:
                             continue
                         setattr(obj, k, v)
                     updated += 1
             s.commit()
+
         return inserted, updated
 
+    # ------------------------------------------------------------------
+    # Enrichment helpers
+    # ------------------------------------------------------------------
     def list_unenriched(self, limit: int = 200) -> List[MediaItem]:
         with self.session() as s:
-            q = select(MediaItem).where(MediaItem.enriched_at.is_(None)).limit(limit)
+            q = (
+                select(MediaItem)
+                .where(MediaItem.enriched_at.is_(None))
+                .limit(limit)
+            )
             return list(s.scalars(q).all())
 
     def update_enrichment(
@@ -59,6 +89,7 @@ class Store:
         locations: List[str],
         language: Optional[str],
         is_editorial: Optional[bool],
+        sentiment: Optional[str],
         tags_json: Dict[str, Any],
         model: str,
         status: str,
@@ -69,32 +100,78 @@ class Store:
             obj = s.get(MediaItem, item_id)
             if obj is None:
                 return
+
             obj.topics = json_dumps(topics)
             obj.actors = json_dumps(actors)
             obj.locations = json_dumps(locations)
             obj.language = language
             obj.is_editorial = is_editorial
+            obj.sentiment = sentiment
+
             obj.tags_json = json_dumps(tags_json)
             obj.enrich_model = model
             obj.enrich_status = status
             obj.enrich_error = error
             obj.enriched_at = enriched_at
+
             s.commit()
 
+    # ------------------------------------------------------------------
+    # Content crawling helpers (NEW)
+    # ------------------------------------------------------------------
+    def update_content(
+        self,
+        item_id: str,
+        content_text: str,
+        fetched_at: Optional[str],
+        status: str = "ok",
+        content_hash: Optional[str] = None,
+    ) -> None:
+        with self.session() as s:
+            obj = s.get(MediaItem, item_id)
+            if obj is None:
+                return
+
+            obj.content_text = content_text
+            obj.content_fetched_at = fetched_at
+            obj.content_status = status
+
+            if content_hash:
+                obj.content_hash = content_hash
+
+            s.commit()
+
+    # ------------------------------------------------------------------
+    # Ingest state
+    # ------------------------------------------------------------------
     def get_state(self, source: str) -> Optional[IngestState]:
         with self.session() as s:
             return s.get(IngestState, source)
 
-    def set_state(self, source: str, last_run_at: Optional[str], cursor: Optional[str] = None) -> None:
+    def set_state(
+        self,
+        source: str,
+        last_run_at: Optional[str],
+        cursor: Optional[str] = None,
+    ) -> None:
         with self.session() as s:
             obj = s.get(IngestState, source)
             if obj is None:
-                s.add(IngestState(source=source, last_run_at=last_run_at, cursor=cursor))
+                s.add(
+                    IngestState(
+                        source=source,
+                        last_run_at=last_run_at,
+                        cursor=cursor,
+                    )
+                )
             else:
                 obj.last_run_at = last_run_at
                 obj.cursor = cursor
             s.commit()
 
+    # ------------------------------------------------------------------
+    # Query helpers
+    # ------------------------------------------------------------------
     def query_items(
         self,
         since_iso: Optional[str] = None,
@@ -116,7 +193,6 @@ class Store:
             rows = list(s.scalars(q).all())
 
         if topics_any:
-            # Filter in Python because JSON-in-text portability varies across DBs.
             out = []
             for r in rows:
                 try:
@@ -126,4 +202,5 @@ class Store:
                 if any(x in t for x in topics_any):
                     out.append(r)
             return out
+
         return rows

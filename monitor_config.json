@@ -1,7 +1,7 @@
 {
   "sources": {
     "gdelt": {
-      "enabled": true,
+      "enabled": false,
       "query": "(KPK OR korupsi OR DPR) AND (Indonesia OR Jakarta)",
       "sourcelang": "ind",
       "max_records": 250,
@@ -18,22 +18,11 @@
     "rss": {
       "enabled": true,
       "feeds": {
-        "kompas": "https://rss.kompas.com/api/feed/social?apikey=bc58c81819dff4b8d5c53540a2fc7ffd83e6314a",
-        "tempo": "https://rss.tempo.co",
-        "antara_topnews": "https://www.antaranews.com/rss/top-news.xml",
-        "antara_terkini": "https://www.antaranews.com/rss/terkini.xml",
-        "antara_politik": "https://www.antaranews.com/rss/politik.xml",
-        "antara_ekonomi": "https://www.antaranews.com/rss/ekonomi.xml",
-        "mediaindonesia": "https://mediaindonesia.com/feed/all",
-        "detik": "https://news.detik.com/berita/rss",
-        "detik_finance": "https://finance.detik.com/rss",
-        "cnnindonesia_nasional": "https://www.cnnindonesia.com/nasional/rss",
-        "cnnindonesia_ekonomi": "https://www.cnnindonesia.com/ekonomi/rss",
-        "cnbcindonesia_market": "https://www.cnbcindonesia.com/market/rss"
+        "kompas": "https://rss.kompas.com/api/feed/social?apikey=bc58c81819dff4b8d5c53540a2fc7ffd83e6314a"
       }
     },
     "youtube": {
-      "enabled": true,
+      "enabled": false,
       "channels": {
         "narasi": "UCzI8ArgVBHXN3lSz-dI0yRw",
         "tvone": "UCER4rvDnRBPr_ncYW4UCZjg",
@@ -46,9 +35,12 @@
     "topics": {
       "national_politics": {
         "keywords": [
-          "kpk",
-          "korupsi",
-          "dpr"
+          "dpr",
+          "mpr",
+          "pemerintah",
+          "kementrian",
+          "kebijakan",
+          "undang-undang"
         ],
         "locations": []
       },
@@ -56,7 +48,8 @@
         "keywords": [
           "pendidikan",
           "sekolah",
-          "kurikulum"
+          "kurikulum",
+          "guru"
         ],
         "locations": []
       },
@@ -75,13 +68,18 @@
       "Prabowo",
       "KPK",
       "DPR",
-      "BNPB"
+      "BNPB",
+      "Kementerian",
+      "Presiden",
+      "Menteri",
+      "Gubernur",
+      "Bupati"
     ]
   },
   "preprocess": {
     "enabled": true,
     "gemini_model": "models/gemini-2.0-flash-lite",
-    "batch_size": 200,
+    "batch_size": 10,
     "max_retries": 2
   },
   "report": {

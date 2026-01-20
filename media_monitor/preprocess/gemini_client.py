@@ -74,7 +74,8 @@ def default_enrichment_schema() -> Dict[str, Any]:
             "actors": {"type": "ARRAY", "items": {"type": "STRING"}},
             "locations": {"type": "ARRAY", "items": {"type": "STRING"}},
             "language": {"type": "STRING"},
+            "sentiment": {"type": "STRING"},
             "is_editorial": {"type": "BOOLEAN"},
         },
-        "required": ["topics", "actors", "locations"],
+        "required": ["topics", "actors", "locations", "language", "sentiment", "is_editorial"],
     }

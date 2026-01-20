@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
+
+from .fetch_content import fetch_article_text
 
 from ..utils import clean_text, now_iso
 from ..db.store import Store
@@ -9,12 +11,19 @@ from .schema import Enrichment
 from .gemini_client import GeminiClient, default_enrichment_schema
 
 
-def _build_prompt(item: MediaItem, topics_allowed: List[str], actors_seed: List[str]) -> str:
+MAX_CONTENT_CHARS = 4000  # keep Gemini cheap & safe
+
+
+def _build_prompt(
+    item: MediaItem,
+    topics_allowed: List[str],
+    actors_seed: List[str],
+    content_text: Optional[str],
+) -> str:
     title = clean_text(item.title or "")
     summary = clean_text(item.summary or "")
+    content = clean_text(content_text or "")[:MAX_CONTENT_CHARS]
 
-    # Keep the prompt small (cheap model).
-    # Provide allowed topics list, and a seed list of actors you care about.
     topics_str = ", ".join(topics_allowed)
     actors_str = ", ".join(actors_seed)
 
@@ -24,16 +33,18 @@ Return ONLY JSON that matches this schema:
   "topics": [string],
   "actors": [string],
   "locations": [string],
-  "language": string,
-  "is_editorial": boolean
+  "language": string | null,
+  "is_editorial": boolean | null,
+  "sentiment": string
 }}
 
 Rules:
 - topics MUST be chosen ONLY from this allowed list: [{topics_str}]. If none match, return empty list.
-- actors: include organizations and public figures mentioned or strongly implied. Prefer canonical names if obvious.
-- locations: Indonesian provinces/cities if mentioned (e.g., Jakarta, Jawa Barat, Konawe Utara). If none, empty list.
-- language: use ISO code like "id" or "en". If uncertain, null.
-- is_editorial: true if opinion/analysis/editorial, false if straight reporting; if unclear, null.
+- actors: include organizations and public figures mentioned or strongly implied.
+- locations: Indonesian provinces/cities if mentioned (e.g., Jakarta, Jawa Barat, Konawe Utara).
+- language: ISO-639-1 code ("id", "en"). If uncertain, null.
+- is_editorial: true if opinion/analysis/editorial, false if straight reporting; null if unclear.
+- sentiment: positive, negative, or neutral.
 
 Metadata:
 Platform: {item.platform}
@@ -43,13 +54,22 @@ URL: {item.url}
 
 Title: {title}
 Summary: {summary}
+Content:
+{content}
 """
 
 
-def _fallback_keyword_enrichment(item: MediaItem, taxonomy: Dict[str, Any]) -> Enrichment:
-    """No-key fallback (very rough)."""
-    text = (clean_text(item.title or "") + " " + clean_text(item.summary or "")).lower()
-    topics = []
+def _fallback_keyword_enrichment(
+    item: MediaItem,
+    taxonomy: Dict[str, Any],
+) -> Enrichment:
+    text = (
+        clean_text(item.title or "")
+        + " "
+        + clean_text(item.summary or "")
+    ).lower()
+
+    topics: List[str] = []
     for name, spec in (taxonomy.get("topics", {}) or {}).items():
         kws = [k.lower() for k in (spec.get("keywords") or [])]
         locs = [l.lower() for l in (spec.get("locations") or [])]
@@ -62,14 +82,26 @@ def _fallback_keyword_enrichment(item: MediaItem, taxonomy: Dict[str, Any]) -> E
     actors_seed = taxonomy.get("actors", []) or []
     actors = [a for a in actors_seed if a.lower() in text]
 
-    # Very naive: if contains many opinion markers
     is_editorial = None
-    if any(x in text for x in ["opini", "menurut saya", "seharusnya", "kritik tajam"]):
+    if any(x in text for x in ["opini", "menurut saya", "seharusnya", "kritik"]):
         is_editorial = True
 
-    # language guess
-    language = "id" if any(w in text for w in ["yang","dan","tidak","dengan"]) else None
-    return Enrichment(topics=topics, actors=actors, locations=[], language=language, is_editorial=is_editorial)
+    sentiment = "neutral"
+    if any(x in text for x in ["positif", "baik", "bagus", "apresiasi"]):
+        sentiment = "positive"
+    elif any(x in text for x in ["negatif", "buruk", "jelek", "korupsi", "skandal"]):
+        sentiment = "negative"
+
+    language = "id" if any(w in text for w in ["yang", "dan", "tidak", "dengan"]) else None
+
+    return Enrichment(
+        topics=topics,
+        actors=actors,
+        locations=[],
+        language=language,
+        is_editorial=is_editorial,
+        sentiment=sentiment,
+    )
 
 
 def enrich_pending(
@@ -80,26 +112,38 @@ def enrich_pending(
     batch_size: int = 20,
     max_retries: int = 2,
 ) -> Dict[str, int]:
-    """Enrich items where enriched_at is NULL."""
     pending = store.list_unenriched(limit=batch_size)
     if not pending:
         return {"pending": 0, "enriched_ok": 0, "enriched_error": 0, "skipped": 0}
 
     topics_allowed = list((taxonomy.get("topics", {}) or {}).keys())
     actors_seed = taxonomy.get("actors", []) or []
-
     schema = default_enrichment_schema()
 
-    client = None
-    if gemini_api_key:
-        client = GeminiClient(api_key=gemini_api_key, model=gemini_model)
+    client = (
+        GeminiClient(api_key=gemini_api_key, model=gemini_model)
+        if gemini_api_key
+        else None
+    )
 
-    ok = 0
-    err = 0
-    skipped = 0
+    ok = err = skipped = 0
 
     for it in pending:
-        # If no gemini key, fallback to cheap keyword tagging
+        content_text = getattr(it, "content_text", None)
+
+        if not content_text:
+            content = fetch_article_text(it.url)
+            if content:
+                store.update_content(
+                    item_id=it.id,
+                    content_text=content,
+                    fetched_at=now_iso(),
+                    status="ok",
+                )
+                content_text = content
+
+
+        # ---- fallback path ----
         if client is None:
             enr = _fallback_keyword_enrichment(it, taxonomy)
             store.update_enrichment(
@@ -109,21 +153,27 @@ def enrich_pending(
                 locations=enr.locations,
                 language=enr.language,
                 is_editorial=enr.is_editorial,
+                sentiment=enr.sentiment,
                 tags_json=enr.model_dump(),
                 model="fallback_keyword",
-                status="skipped",
-                error="GEMINI_API_KEY not set; used fallback keyword enrichment.",
+                status="ok",
+                error=None,
                 enriched_at=now_iso(),
             )
             skipped += 1
             continue
 
-        prompt = _build_prompt(it, topics_allowed, actors_seed)
+        prompt = _build_prompt(it, topics_allowed, actors_seed, content_text)
 
         last_error = None
-        for attempt in range(max_retries + 1):
+        for _ in range(max_retries + 1):
             try:
-                enr = client.enrich(prompt=prompt, response_schema=schema, temperature=0.1)
+                enr = client.enrich(
+                    prompt=prompt,
+                    response_schema=schema,
+                    temperature=0.1,
+                )
+
                 store.update_enrichment(
                     item_id=it.id,
                     topics=enr.topics,
@@ -131,6 +181,7 @@ def enrich_pending(
                     locations=enr.locations,
                     language=enr.language,
                     is_editorial=enr.is_editorial,
+                    sentiment=enr.sentiment,
                     tags_json=enr.model_dump(),
                     model=gemini_model,
                     status="ok",
@@ -142,6 +193,7 @@ def enrich_pending(
                 break
             except Exception as e:
                 last_error = str(e)
+
         if last_error:
             store.update_enrichment(
                 item_id=it.id,
@@ -150,6 +202,7 @@ def enrich_pending(
                 locations=[],
                 language=None,
                 is_editorial=None,
+                sentiment=None,
                 tags_json={},
                 model=gemini_model,
                 status="error",
@@ -158,4 +211,9 @@ def enrich_pending(
             )
             err += 1
 
-    return {"pending": len(pending), "enriched_ok": ok, "enriched_error": err, "skipped": skipped}
+    return {
+        "pending": len(pending),
+        "enriched_ok": ok,
+        "enriched_error": err,
+        "skipped": skipped,
+    }
