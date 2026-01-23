@@ -18,7 +18,12 @@
     "rss": {
       "enabled": true,
       "feeds": {
-        "kompas": "https://rss.kompas.com/api/feed/social?apikey=bc58c81819dff4b8d5c53540a2fc7ffd83e6314a"
+        "kompas": "https://rss.kompas.com/api/feed/social?apikey=bc58c81819dff4b8d5c53540a2fc7ffd83e6314a",
+        "tempo": "https://rss.tempo.co",
+        "antara_topnews": "https://www.antaranews.com/rss/top-news.xml",
+        "mediaindonesia": "https://mediaindonesia.com/feed/all",
+        "cnnindonesia_nasional": "https://www.cnnindonesia.com/nasional/rss",
+        "detik": "https://news.detik.com/berita/rss"
       }
     },
     "youtube": {
@@ -33,14 +38,18 @@
   },
   "taxonomy": {
     "topics": {
-      "national_politics": {
+      "politics": {
         "keywords": [
           "dpr",
           "mpr",
           "pemerintah",
+          "mahkamah konstitusi",
+          "mahkamah agung",
           "kementrian",
           "kebijakan",
-          "undang-undang"
+          "undang-undang",
+          "pilkada",
+          "pemilu"
         ],
         "locations": []
       },
@@ -49,7 +58,9 @@
           "pendidikan",
           "sekolah",
           "kurikulum",
-          "guru"
+          "guru",
+          "siswa",
+          "belajar"
         ],
         "locations": []
       },
@@ -59,7 +70,9 @@
           "gempa",
           "longsor",
           "kebakaran",
-          "bencana"
+          "bencana",
+          "korban",
+          "terluka"
         ],
         "locations": []
       }
@@ -67,23 +80,22 @@
     "actors": [
       "Prabowo",
       "KPK",
-      "DPR",
-      "BNPB",
-      "Kementerian",
-      "Presiden",
-      "Menteri",
-      "Gubernur",
-      "Bupati"
+      "DPR"
     ]
   },
   "preprocess": {
     "enabled": true,
     "gemini_model": "models/gemini-2.0-flash-lite",
-    "batch_size": 50,
+    "batch_size": 500,
     "max_retries": 2
   },
   "report": {
-    "sonar_model": "sonar-pro",
-    "max_urls_per_topic": 20
+    "sonar_model": "sonar-deep-research",
+    "max_urls_per_topic": 50,
+    "briefing_language": "id",
+    "sonar_timeout_s": 3600,
+    "sonar_retries": 3,
+    "sonar_backoff_s": 60,
+    "sonar_max_tokens": 100000
   }
 }

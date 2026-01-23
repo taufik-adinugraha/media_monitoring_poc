@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -12,10 +13,19 @@ class SonarClient:
     Endpoint: POST /chat/completions
     """
 
-    def __init__(self, api_key: str, model: str = "sonar-pro", timeout_s: int = 60):
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "sonar-pro",
+        timeout_s: int = 180,
+        retries: int = 3,
+        backoff_s: int = 8,
+    ):
         self.api_key = api_key
         self.model = model
-        self.timeout_s = timeout_s
+        self.timeout_s = int(timeout_s)
+        self.retries = int(retries)
+        self.backoff_s = int(backoff_s)
         self.base_url = "https://api.perplexity.ai"
 
     def chat(
@@ -38,6 +48,7 @@ class SonarClient:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+
         if search_recency_filter:
             payload["search_recency_filter"] = search_recency_filter
         if search_domain_filter:
@@ -45,19 +56,53 @@ class SonarClient:
         if search_mode:
             payload["search_mode"] = search_mode
 
-        r = requests.post(url, headers=headers, json=payload, timeout=self.timeout_s)
-        r.raise_for_status()
-        return r.json()
+        last_err: Optional[Exception] = None
+
+        for attempt in range(self.retries):
+            try:
+                r = requests.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=self.timeout_s,
+                )
+                r.raise_for_status()
+                return r.json()
+
+            except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectTimeout) as e:
+                last_err = e
+                if attempt == self.retries - 1:
+                    raise
+                time.sleep(self.backoff_s * (attempt + 1))
+
+            except requests.exceptions.HTTPError as e:
+                last_err = e
+                status = getattr(e.response, "status_code", None)
+                # Retry only on rate-limit or server errors
+                if status in (429, 500, 502, 503, 504):
+                    if attempt == self.retries - 1:
+                        raise
+                    time.sleep(self.backoff_s * (attempt + 1))
+                    continue
+                raise
+
+        # Should never reach here
+        if last_err:
+            raise last_err
+        raise RuntimeError("SonarClient.chat failed unexpectedly")
 
     @staticmethod
     def extract_text_and_citations(resp: Dict[str, Any]) -> Tuple[str, List[str]]:
         text = ""
         citations: List[str] = []
+
         try:
             text = resp["choices"][0]["message"]["content"] or ""
         except Exception:
             text = ""
-        # Some Sonar responses include citations at top-level or per-choice
+
+        # Some Sonar responses include citations at top-level
         if isinstance(resp.get("citations"), list):
             citations = [str(x) for x in resp["citations"]]
+
         return text, citations
