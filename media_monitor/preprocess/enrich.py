@@ -16,7 +16,7 @@ MAX_CONTENT_CHARS = 4000  # keep Gemini cheap & safe
 
 def _build_prompt(
     item: MediaItem,
-    topics_allowed: List[str],
+    topic_specs: Dict[str, Dict[str, Any]],
     actors_seed: List[str],
     content_text: Optional[str],
 ) -> str:
@@ -24,37 +24,89 @@ def _build_prompt(
     summary = clean_text(item.summary or "")
     content = clean_text(content_text or "")[:MAX_CONTENT_CHARS]
 
-    topics_str = ", ".join(topics_allowed)
+    # Build taxonomy block with descriptions + keywords
+    topic_blocks = []
+    allowed_topic_names = []
+
+    for topic_name, spec in topic_specs.items():
+        allowed_topic_names.append(topic_name)
+
+        desc = clean_text(spec.get("description", "")).strip()
+        keywords = spec.get("keywords") or []
+        kw_str = ", ".join(keywords)
+
+        block = f"""
+- {topic_name}
+  Description:
+  {desc}
+"""
+        if kw_str:
+            block += f"  Indicative keywords: {kw_str}\n"
+
+        topic_blocks.append(block.strip())
+
+    topics_allowed_str = ", ".join(allowed_topic_names)
     actors_str = ", ".join(actors_seed)
 
-    return f"""You are an information extraction engine for media monitoring.
-Return ONLY JSON that matches this schema:
+    return f"""You are an information extraction and classification engine for media monitoring.
+
+Your task is to analyze the article and return structured metadata.
+
+IMPORTANT RULES FOR TOPICS:
+- Topics are semantic concepts defined by their descriptions.
+- Keywords are ONLY indicative signals and must NOT be used alone.
+- Assign a topic ONLY if the article clearly fits the topic description.
+- One article MAY belong to multiple topics.
+- Topics MUST be chosen ONLY from this allowed list: [{topics_allowed_str}].
+- If none apply, return an empty list.
+
+ACTOR RULES:
+- Actors include public figures, government bodies, political parties, companies, and organizations.
+- Use full names where possible.
+- If an actor is implied but not explicitly named, include it only if highly confident.
+
+OUTPUT FORMAT:
+Return ONLY valid JSON that matches this schema:
 {{
   "topics": [string],
   "actors": [string],
   "locations": [string],
   "language": string | null,
   "is_editorial": boolean | null,
-  "sentiment": string
+  "sentiment": "positive" | "negative" | "neutral",
+  "actor_quotes": [
+    {{
+      "actor": string,
+      "quote": string,
+      "context": string
+    }}
+  ]
 }}
 
-Rules:
-- topics MUST be chosen ONLY from this allowed list: [{topics_str}]. If none match, return empty list.
-- actors: include organizations and public figures mentioned or strongly implied.
-- locations: Indonesian provinces/cities if mentioned (e.g., Jakarta, Jawa Barat, Konawe Utara).
-- language: ISO-639-1 code ("id", "en"). If uncertain, null.
-- is_editorial: true if opinion/analysis/editorial, false if straight reporting; null if unclear.
-- sentiment: positive, negative, or neutral.
+NOTES:
+- Extract actor_quotes ONLY if there are direct quotations (verbatim).
+- Do NOT paraphrase quotes.
+- If no direct quotes exist, return an empty list for actor_quotes.
 
-Metadata:
+TAXONOMY:
+{chr(10).join(topic_blocks)}
+
+SEED ACTORS (for reference only, not exhaustive):
+{actors_str}
+
+ARTICLE METADATA:
 Platform: {item.platform}
 Source type: {item.source_type}
 Publisher/Author: {item.publisher_or_author}
 URL: {item.url}
 
+ARTICLE CONTENT:
 Title: {title}
-Summary: {summary}
-Content:
+
+Summary:
+{summary}
+
+Full Content:
 {content}
 """
 
@@ -116,7 +168,7 @@ def enrich_pending(
     if not pending:
         return {"pending": 0, "enriched_ok": 0, "enriched_error": 0, "skipped": 0}
 
-    topics_allowed = list((taxonomy.get("topics", {}) or {}).keys())
+    topic_specs = taxonomy.get("topics", {}) or {}
     actors_seed = taxonomy.get("actors", []) or []
     schema = default_enrichment_schema()
 
@@ -163,7 +215,7 @@ def enrich_pending(
             skipped += 1
             continue
 
-        prompt = _build_prompt(it, topics_allowed, actors_seed, content_text)
+        prompt = _build_prompt(it, topic_specs, actors_seed, content_text)
 
         last_error = None
         for _ in range(max_retries + 1):

@@ -39,6 +39,7 @@
   "taxonomy": {
     "topics": {
       "politics": {
+        "description": "Kajian politik dan pemerintahan di Indonesia, termasuk isu politik yang ada di legislatif, yudikatif, dan eksekutif.",
         "keywords": [
           "dpr",
           "mpr",
@@ -54,17 +55,20 @@
         "locations": []
       },
       "education": {
+        "description": "Kajian pendidikan dan pembelajaran di Indonesia.",
         "keywords": [
           "pendidikan",
           "sekolah",
           "kurikulum",
           "guru",
           "siswa",
-          "belajar"
+          "belajar",
+          "pembulian"
         ],
         "locations": []
       },
       "disaster": {
+        "description": "Bencana alam di Indonesia.",
         "keywords": [
           "banjir",
           "gempa",
@@ -77,11 +81,25 @@
         "locations": []
       }
     },
-    "actors": [
-      "Prabowo",
-      "KPK",
-      "DPR"
-    ]
+    "agama": {
+      "description": "Isu agama di Indonesia dan kebiasaan para pemuka agama dan masyarakat.",
+      "keywords": [
+        "islam",
+        "kristen",
+        "katolik",
+        "hindu",
+        "budha",
+        "konghucu",
+        "penistaan agama",
+        "pelanggaran agama",
+        "dosa",
+        "surga",
+        "neraka",
+        "haram"
+      ],
+      "locations": []
+    },
+    "actors": []
   },
   "preprocess": {
     "enabled": true,
